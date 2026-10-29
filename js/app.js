@@ -1,45 +1,39 @@
-// Bootstraps the cabin, builds a dock of the TV's installed apps, and launches them. Plain ES5 for Tizen 3.0.
-// Order matters: the remote-key handler is attached FIRST, and the dock and cabin are each wrapped, so a
-// failure in one (e.g. an old-browser canvas quirk, or getAppsInfo) can never leave the remote dead.
+// Bootstraps the cabin and a dock of the TV's streaming apps. Plain ES5 for Tizen 3.0.
+// The dock is a curated list (exact Tizen app ids from this TV), so it shows the right apps as clean tiles
+// and launches them reliably — getAppsInfo returns a messy set of system packages, so we don't use it here.
+// Keys are attached FIRST and everything else is wrapped, so one failure can't leave the remote dead.
 (function (g) {
   'use strict';
 
   // --- where the sun is. Default Budapest; change for another city (lat north +, lon east +). ---
   var LAT = 47.50, LON = 19.04;
 
-  // Apps whose own icon is a hard-to-read wordmark get a big blocky letter, like the Android launcher.
-  var LETTERS = [
-    { m: /netflix/i, t: 'N', fg: '#E50914', bg: '#000000' },
-    { m: /\b(max|hbo)\b/i, t: 'M', fg: '#FFFFFF', bg: '#002BE7' },
-    { m: /disney/i, t: 'D+', fg: '#FFFFFF', bg: '#0B1446' }
+  // The apps to show, in order. id = Tizen app id; t = tile text; bg/fg = tile colours.
+  // If an app is reinstalled its id changes — update it here (list them with the TV in Developer mode).
+  var DOCK = [
+    { id: '9Ur5IzDKqV.TizenYouTube', name: 'YouTube', t: 'YT', bg: '#FF0000', fg: '#FFFFFF' },
+    { id: 'RN1MCdNq8t.Netflix', name: 'Netflix', t: 'N', bg: '#000000', fg: '#E50914' },
+    { id: 'MCmYXNxgcu.DisneyPlus', name: 'Disney+', t: 'D+', bg: '#0B1446', fg: '#FFFFFF' },
+    { id: 'evKhCgZelL.AmazonIgnitionLauncher2', name: 'Prime Video', t: 'P', bg: '#00A8E1', fg: '#FFFFFF' },
+    { id: 'Y6A54cEa22.AppleTV', name: 'Apple TV', t: 'tv', bg: '#111111', fg: '#FFFFFF' },
+    { id: 'rJeHak5zRg.Spotify', name: 'Spotify', t: 'S', bg: '#1DB954', fg: '#FFFFFF' },
+    { id: 'skysh0WTIM.SkyShowtime', name: 'SkyShowtime', t: 'Sky', bg: '#5B2A86', fg: '#FFFFFF' },
+    { id: 'vbUQClczfR.Wuakitv', name: 'Rakuten TV', t: 'R', bg: '#BF0000', fg: '#FFFFFF' },
+    { id: 'FyObqYlHVG.SWEETTV', name: 'SWEET.TV', t: 'SW', bg: '#F5A623', fg: '#222222' }
   ];
-  var ORDER = [/youtube/i, /netflix/i, /disney/i, /\b(max|hbo)\b/i, /prime|amazon/i, /apple/i, /spotify/i];
-  var PALETTE = ['#C0392B', '#2E86C1', '#27AE60', '#8E44AD', '#D35400', '#16A085', '#C62828', '#B7950B', '#2C3E50'];
 
-  function letterFor(name) { for (var i = 0; i < LETTERS.length; i++) if (LETTERS[i].m.test(name)) return LETTERS[i]; return null; }
-  function orderRank(name) { for (var i = 0; i < ORDER.length; i++) if (ORDER[i].test(name)) return i; return ORDER.length + 1; }
-  function hashColor(name) { var s = 0; for (var i = 0; i < name.length; i++) s += name.charCodeAt(i); return PALETTE[s % PALETTE.length]; }
-
-  function listApps(cb) {
-    if (!g.tizen || !tizen.application || !tizen.application.getAppsInfo) {
-      cb([{ id: 'p.youtube', name: 'YouTube' }, { id: 'p.netflix', name: 'Netflix' }, { id: 'p.disney', name: 'Disney+' },
-      { id: 'p.max', name: 'Max' }, { id: 'p.prime', name: 'Prime Video' }, { id: 'p.apple', name: 'Apple TV' }, { id: 'p.spotify', name: 'Spotify' }]);
-      return;
-    }
-    var self = null;
-    try { self = tizen.application.getCurrentApplication().appInfo.id; } catch (e) { }
+  // Keep only the apps actually installed (ids can differ on another TV); if that lookup fails, show them all.
+  function dockList(cb) {
+    if (!g.tizen || !tizen.application || !tizen.application.getAppsInfo) { cb(DOCK); return; }
     try {
       tizen.application.getAppsInfo(function (apps) {
+        var have = {}, i;
+        for (i = 0; i < apps.length; i++) have[apps[i].id] = true;
         var out = [];
-        for (var i = 0; i < apps.length; i++) {
-          var a = apps[i];
-          if (a.id === self || a.show === false || !a.name) continue;
-          out.push({ id: a.id, name: a.name, iconPath: a.iconPath });
-        }
-        out.sort(function (x, y) { return orderRank(x.name) - orderRank(y.name); });
-        cb(out);
-      }, function () { cb([]); });
-    } catch (e) { cb([]); }
+        for (i = 0; i < DOCK.length; i++) if (have[DOCK[i].id]) out.push(DOCK[i]);
+        cb(out.length ? out : DOCK);
+      }, function () { cb(DOCK); });
+    } catch (e) { cb(DOCK); }
   }
 
   function launch(id) {
@@ -56,19 +50,9 @@
     for (var i = 0; i < apps.length; i++) {
       var a = apps[i];
       var tile = document.createElement('div'); tile.className = 'tile';
-      var inner = document.createElement('div'); inner.className = 'inner letter';
-      var brand = letterFor(a.name);
-      if (brand) { inner.style.background = brand.bg; inner.style.color = brand.fg; inner.appendChild(document.createTextNode(brand.t)); }
-      else { inner.style.background = hashColor(a.name); inner.style.color = '#fff'; inner.appendChild(document.createTextNode(a.name.charAt(0).toUpperCase())); }
-      // Swap in the real icon only if it actually loads (file paths often don't, on the TV).
-      if (a.iconPath) {
-        (function (innerEl, path) {
-          var img = new Image();
-          img.onload = function () { while (innerEl.firstChild) innerEl.removeChild(innerEl.firstChild); innerEl.className = 'inner'; innerEl.style.background = '#000'; innerEl.appendChild(img); };
-          img.onerror = function () { };
-          img.src = (path.charAt(0) === '/' ? 'file://' + path : path);
-        })(inner, a.iconPath);
-      }
+      var inner = document.createElement('div'); inner.className = 'inner';
+      inner.style.background = a.bg; inner.style.color = a.fg;
+      inner.appendChild(document.createTextNode(a.t));
       tile.appendChild(inner);
       var label = document.createElement('div'); label.className = 'label'; label.appendChild(document.createTextNode(a.name));
       tile.appendChild(label);
@@ -87,10 +71,10 @@
 
   function onKey(e) {
     var k = e.keyCode;
-    if (k === 37) move(-1);                 // left
-    else if (k === 39) move(1);             // right
-    else if (k === 13) { if (tiles[focus]) launch(tiles[focus].getAttribute('data-id')); }  // OK / Enter
-    else return;                            // leave up/down, Back, etc. to the TV
+    if (k === 37) move(-1);
+    else if (k === 39) move(1);
+    else if (k === 13) { if (tiles[focus]) launch(tiles[focus].getAttribute('data-id')); }
+    else return;
     if (e.preventDefault) e.preventDefault();
   }
 
@@ -104,15 +88,12 @@
   }
 
   function start() {
-    // 1) Remote first — nothing below can stop the keys from working.
     document.addEventListener('keydown', onKey, false);
     registerTizenKeys();
     try { document.addEventListener('tizenhwkey', function () { }, false); } catch (e) { }
 
-    // 2) Dock.
-    try { listApps(buildDock); } catch (e) { try { buildDock([]); } catch (e2) { } }
+    try { dockList(buildDock); } catch (e) { try { buildDock(DOCK); } catch (e2) { } }
 
-    // 3) Cabin (least critical: if it fails, the dock still works).
     try {
       var canvas = document.getElementById('room');
       canvas.width = 1920; canvas.height = 1080;
