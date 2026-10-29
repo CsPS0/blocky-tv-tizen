@@ -6,6 +6,10 @@ farmer by day, monsters and a sleeping farmer by night, torches and a furnace th
 a cat, and a clock on the wall painting. Along the bottom is a dock of **your TV's own apps** that launches
 them.
 
+![Blocky Cabin by day](docs/screenshot-day.jpg)
+
+![Blocky Cabin at night](docs/screenshot-night.jpg)
+
 Built from the Android launcher's `BlockRoom`/`BlockSprites`/`Daylight`, rewritten in plain ES5 so the
 2017 TV's older browser runs it. No build step, no frameworks.
 
