@@ -1,0 +1,4 @@
+BlockyCabin.wgt
+*.wgt
+*.log
+node_modules/
